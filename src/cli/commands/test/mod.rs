@@ -42,7 +42,7 @@ use crate::{
 	},
 	hooks,
 	io::{
-		compiled_programs::ListTestEntrypointsError,
+		compiled_programs::{list_test_entrypoints, ListTestEntrypointsError},
 		test_files::{list_test_files, ListTestsFilesError},
 	},
 };
@@ -121,37 +121,6 @@ fn compute_hash(filepath: &PathBuf) -> Result<String, String> {
 	io::copy(&mut file, &mut hasher).map_err(|e| format!("Failed to hash file: {}", e))?;
 	let hash = hasher.finalize();
 	return Ok(format!("{:x}", hash));
-}
-
-fn list_test_entrypoints(compiled_path: &PathBuf) -> Result<Vec<String>, String> {
-	let re = Regex::new(r"__main__.(test_\w+)$").expect("Should be a valid regex");
-	let data = std::fs::read_to_string(compiled_path)
-		.map_err(|err| format!("File does not exist: {}", err))?;
-	let json = serde_json::from_str::<Value>(&data)
-		.map_err(|err| format!("Compilation output is not a valid JSON: {}", err))?;
-	let mut test_entrypoints = Vec::new();
-
-	let identifiers = json["identifiers"].as_object();
-	match identifiers {
-		Some(identifiers) => {
-			for (key, value) in identifiers {
-				if re.is_match(key) && value["type"] == "function" {
-					// capture 0 refers to the whole match
-					// capture n-1 refers to the next to last match
-					// captures are denoted with () in regex
-					for capture in re.captures_iter(key) {
-						// regex __main__.(test_\w+)$ has 2 captures
-						// capture 0 is the whole match
-						// capture 1 is the first (and last) capture in this regex
-						test_entrypoints.push(capture[1].to_string());
-					}
-				}
-			}
-		},
-		None => eprintln!("Compilation output does not contain identifiers"),
-	}
-
-	Ok(test_entrypoints)
 }
 
 impl From<(String, TestStatus)> for TestResult {
