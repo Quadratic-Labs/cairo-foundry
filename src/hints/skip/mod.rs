@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 
 use cairo_rs::{
@@ -8,6 +11,20 @@ use cairo_rs::{
 };
 use num_bigint::BigInt;
 
+/// Skip a test
+/// You can use this hint to prepare tests for functionality that isn't completed yet.
+///
+/// Returns nothing
+///
+/// # Examples
+///
+/// Basic usage in a `.cairo` file:
+///
+/// ```cairo
+/// func test_to_be_implemented_later() {
+///     %{ skip() %}
+/// }
+/// ```
 pub fn skip(
 	_vm: &mut VirtualMachine,
 	_exec_scopes: &mut ExecutionScopes,

@@ -4,11 +4,11 @@ mod tests;
 use std::{fmt, path::PathBuf};
 
 use clap::{Args, ValueHint};
-use lazy_static::lazy_static;
 use log::info;
-use regex::Regex;
 use serde::Serialize;
-use walkdir::WalkDir;
+use thiserror::Error;
+
+use crate::io::test_files::{list_test_files, ListTestsFilesError};
 
 use super::CommandExecution;
 
@@ -20,6 +20,16 @@ pub struct ListArgs {
 	pub root: PathBuf,
 }
 
+#[derive(Error, Debug)]
+pub enum ListCommandError {
+	#[error(transparent)]
+	ListFilesError(#[from] ListTestsFilesError),
+}
+
+/// Function used to validate directory type of the specified Path
+/// `path: &str` the Path to test
+/// Returns the `PathBuf` for the given path
+/// or an Err with the Path if it does not exist or if it is not a directory.
 pub fn path_is_valid_directory(path: &str) -> Result<PathBuf, String> {
 	let path = PathBuf::from(path);
 	if path.exists() && path.is_dir() {
@@ -50,32 +60,30 @@ impl fmt::Display for ListOutput {
 	}
 }
 
-impl CommandExecution<ListOutput> for ListArgs {
-	fn exec(&self) -> Result<ListOutput, String> {
+impl CommandExecution<ListOutput, ListCommandError> for ListArgs {
+	/// Implementation of CommandExecution Trait for the List Command
+	///
+	/// The List Command lists and returns the 'ListOutput' of all the valid
+	/// Cairo tests files within the ListArgs root directory(PathBuf).
+	/// To be valid, the filename must follow the following regex:
+	///    "^test_.*\.cairo$"
+	///
+	/// Filename examples:
+	///    test_invalid_program.cairo > Valid
+	///    failing.cairo > Invalid, filename does not start with "test_"
+	///    test_mock_call.cairo.test > Invalid, ends with "test" not ".cairo"
+	///
+	/// When using the cairo-compile command, the root directory is the one specified
+	/// by the option "--root"
+	///
+	/// Returns a `ListOutput` struct with all valid tests files in the `.files: vector<PathBuf>`
+	/// or an error `ListCommandError`, the first Error encoutered during the
+	/// processing of the root directory.
+	fn exec(&self) -> Result<ListOutput, ListCommandError> {
 		info!("Listing files within directory {:?}", self.root);
 
-		lazy_static! {
-			static ref TEST_FILE_REGEX: Regex = Regex::new(r"^test_.*\.cairo$").unwrap();
-		}
+		let tests_list = list_test_files(&self.root)?;
 
-		let mut test_files = WalkDir::new(&self.root)
-			.into_iter()
-			.filter_map(|entry_result| match entry_result {
-				Ok(entry) => {
-					if entry.path().is_file()
-						&& TEST_FILE_REGEX.is_match(&entry.file_name().to_string_lossy())
-					{
-						Some(Ok(entry.path().to_path_buf()))
-					} else {
-						None
-					}
-				},
-				Err(err) => Some(Err(err)),
-			})
-			.collect::<Result<Vec<_>, _>>()
-			.map_err(|err| err.to_string())?;
-		test_files.sort();
-
-		Ok(ListOutput { files: test_files })
+		Ok(ListOutput { files: tests_list })
 	}
 }
