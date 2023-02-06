@@ -13,20 +13,11 @@ use cairo_rs::{
 use clap::{Args, ValueHint};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::{
-	fmt::Display,
-	fs::File,
-	io,
-	io::{BufReader, BufWriter},
-	path::PathBuf,
-	sync::Arc,
-	time::Instant,
-};
+use std::{fmt::Display, fs::File, io, io::BufWriter, path::PathBuf, sync::Arc, time::Instant};
 use uuid::Uuid;
 
-use regex::Regex;
+use self::cache::read_json_file;
 
 use super::{list::path_is_valid_directory, CommandExecution};
 use std::fs;
@@ -152,23 +143,6 @@ fn setup_hooks() -> Hooks {
 		Arc::new(hooks::pre_step_instruction),
 		Arc::new(hooks::post_step_instruction),
 	)
-}
-
-// fn list_cairo_files(root: &PathBuf) -> Result<Vec<PathBuf>, String> {
-// 	ListArgs {
-// 		root: PathBuf::from(root),
-// 	}
-// 	.exec()
-// 	.map(|cmd_output: ListOutput| cmd_output.files)
-// }
-
-fn read_json_file(path: &PathBuf) -> Result<CacheJson, String> {
-	// Open the file in read-only mode with buffer.
-	let file = File::open(path).map_err(|op| format!("file does not exists {}", op))?;
-	let reader = BufReader::new(file);
-	let data =
-		serde_json::from_reader(reader).map_err(|op| format!("file does not exists {}", op))?;
-	return Ok(data);
 }
 
 fn compile_and_list_entrypoints(
