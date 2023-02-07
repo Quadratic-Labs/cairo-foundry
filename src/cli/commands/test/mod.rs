@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use std::{fmt::Display, fs::File, io, io::BufWriter, path::PathBuf, sync::Arc, time::Instant};
 use uuid::Uuid;
 
-use self::cache::read_json_file;
+use self::cache::read_cache;
 
 use super::{list::path_is_valid_directory, CommandExecution};
 use std::fs;
@@ -145,6 +145,16 @@ fn setup_hooks() -> Hooks {
 	)
 }
 
+/// Compile a cairo file, returning a truple
+/// (path_to_original_code, path_to_compiled_code, entrypoints)
+fn compile_and_list_entrypoints_original(
+	path_to_code: PathBuf,
+) -> Result<(PathBuf, PathBuf, Vec<String>), TestCommandError> {
+	let path_to_compiled = compile(&path_to_code)?;
+	let entrypoints = list_test_entrypoints(&path_to_compiled)?;
+	Ok((path_to_code, path_to_compiled, entrypoints))
+}
+
 fn compile_and_list_entrypoints(
 	cache: Result<CompiledCacheFile, String>,
 ) -> Option<(PathBuf, PathBuf, Vec<String>)> {
@@ -194,7 +204,7 @@ fn dump_json_file(path: &PathBuf, data: &CacheJson) -> Result<(), String> {
 	return Ok(());
 }
 
-fn read_cache(path_to_code: PathBuf) -> Result<CompiledCacheFile, String> {
+fn get_cache(path_to_code: PathBuf) -> Result<CompiledCacheFile, String> {
 	// read individual cache file
 	// avoid same cache file because we're doing multiprocessing and getting race condition
 	let cache_dir = dirs::cache_dir().expect("cache dir not supported");
@@ -213,7 +223,7 @@ fn read_cache(path_to_code: PathBuf) -> Result<CompiledCacheFile, String> {
 	// cache file will be in os_cache_dir/cairo-foundry-cache/contract_name.json
 	cache_path.push(format!("{}.json", filename));
 
-	let data = read_json_file(&cache_path);
+	let data = read_cache(&cache_path);
 	// compute hash from file
 	let hash_calculated = compute_hash(&path_to_code).unwrap();
 	let contract_path = path_to_code.to_str().unwrap().to_string();
@@ -271,7 +281,7 @@ fn purge_hint_buffer(execution_uuid: &Uuid, output: &mut String) {
 /// and execute it.
 /// It will then return a TestResult, representing the output of the test.
 fn test_single_entrypoint(
-	program: ProgramJson,
+	program_json: ProgramJson,
 	test_entrypoint: &str,
 	hint_processor: &mut BuiltinHintProcessor,
 	hooks: Option<Hooks>,
@@ -282,7 +292,7 @@ fn test_single_entrypoint(
 	let execution_uuid = Uuid::new_v4();
 	init_buffer(execution_uuid);
 
-	let program = Program::from_json(program, Some(test_entrypoint))?;
+	let program = Program::from_json(program_json, Some(test_entrypoint))?;
 
 	let res_cairo_run = cairo_run(program, hint_processor, execution_uuid, hooks, max_steps);
 	let duration = start.elapsed();
@@ -355,15 +365,11 @@ fn test_single_entrypoint(
 fn run_tests_for_one_file(
 	hint_processor: &mut BuiltinHintProcessor,
 	path_to_original: PathBuf,
-	path_to_compiled: PathBuf,
+	program_json: ProgramJson,
 	test_entrypoints: Vec<String>,
 	hooks: Hooks,
 	max_steps: u64,
 ) -> Result<TestResult, TestCommandError> {
-	let file = fs::File::open(path_to_compiled).unwrap();
-	let reader = io::BufReader::new(file);
-	let program_json = deserialize_program_json(reader)?;
-
 	let output = format!("Running tests in file {}\n", path_to_original.display());
 	let res = test_entrypoints
 		.into_iter()
@@ -400,13 +406,17 @@ impl CommandExecution<TestOutput, TestCommandError> for TestArgs {
 		list_test_files(&self.root)?
 			// .into_par_iter()
 			.into_iter()
-			.map(|op| read_cache(op))
+			.map(|op| get_cache(op))
 			.filter_map(compile_and_list_entrypoints)
 			.map(|(path_to_original, path_to_compiled, test_entrypoints)| {
+				let file = fs::File::open(path_to_compiled).unwrap();
+				let reader = io::BufReader::new(file);
+				let program_json = deserialize_program_json(reader)?;
+
 				run_tests_for_one_file(
 					&mut hint_processor,
 					path_to_original,
-					path_to_compiled,
+					program_json,
 					test_entrypoints,
 					hooks.clone(),
 					self.max_steps,

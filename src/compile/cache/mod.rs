@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests;
+use sha2::{Digest, Sha256, Sha512};
 
 use std::{fmt::Debug, fs::read_to_string, io, path::PathBuf};
 
@@ -45,7 +46,7 @@ fn is_valid_cairo_contract(contract_path: &PathBuf) -> Result<(), CacheError> {
 	if extension != "cairo" {
 		return Err(CacheError::InvalidContractExtension(
 			contract_path.to_owned(),
-		))
+		));
 	}
 	Ok(())
 }
@@ -74,4 +75,15 @@ fn get_compiled_contract_path(
 		cache_dir.join(CAIRO_FOUNDRY_COMPILED_CONTRACT_DIR).join(contract_relative_path);
 	compiled_contract_path.set_extension("json");
 	Ok(compiled_contract_path)
+}
+
+pub fn hash() -> u8 {
+	// create a Sha256 object
+	let mut hasher = Sha256::new();
+
+	// write input message
+	hasher.update(b"hello world");
+
+	// return hash digest and consume hasher
+	hasher.finalize()
 }

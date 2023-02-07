@@ -1,4 +1,5 @@
 use dirs;
+use serde_json::Value;
 use std::{
 	fmt::Debug,
 	fs::File,
@@ -54,34 +55,34 @@ pub enum Error {
 /// # }
 /// ```
 pub fn compile(path_to_cairo_file: &PathBuf) -> Result<PathBuf, Error> {
-	let path_to_cairo_compiler = which(CAIRO_COMPILE_BINARY)?;
+	let compiled = compile_(path_to_cairo_file)?;
 
-	// Use cairo-compile binary in order to compile the .cairo file
-	let compilation_output = Command::new(CAIRO_COMPILE_BINARY)
-		.args([&path_to_cairo_file])
-		.output()
-		.map_err(Error::RunProcess)?;
+	let compiled_program_path = get_compiled_program_cache_path(path_to_cairo_file)?;
 
-	// Check if the compilation was successful
-	if !compilation_output.status.success() {
-		return Err(Error::Compilation(
-			path_to_cairo_compiler.as_path().display().to_string(),
-			String::from_utf8(compilation_output.stderr).unwrap_or_else(|e| {
-				format!(
-					"{} with non utf8 error message: {}",
-					path_to_cairo_file.as_path().display(),
-					e
-				)
-			}),
-		))
-	}
+	store_cache(&compiled, &compiled_program_path)?;
+
+	Ok(compiled_program_path)
+}
+
+pub fn store_cache(compiled: &[u8], compiled_program_path: &PathBuf) -> Result<(), Error> {
+	// Create a file to store command output inside a json file
+	let mut file = File::create(&compiled_program_path).map_err(|e| {
+		Error::FileCreation(compiled_program_path.as_path().display().to_string(), e)
+	})?;
+	file.write_all(&compiled).map_err(|e| {
+		Error::WriteToFile(compiled_program_path.as_path().display().to_string(), e)
+	})?;
+
+	Ok(())
+}
+
+pub fn get_compiled_program_cache_path(path_to_cairo_file: &PathBuf) -> Result<PathBuf, Error> {
+	let path_to_cache_dir = dirs::cache_dir().ok_or(Error::CacheDirSupported)?;
 
 	// Retrieve only the file name to create a clean compiled file name.
 	let filename = path_to_cairo_file
 		.file_stem()
 		.ok_or_else(|| Error::StemlessFile(path_to_cairo_file.as_path().display().to_string()))?;
-
-	let path_to_cache_dir = dirs::cache_dir().ok_or(Error::CacheDirSupported)?;
 
 	// Build path to save the  compiled file
 	let mut compiled_program_path = PathBuf::new();
@@ -93,11 +94,35 @@ pub fn compile(path_to_cairo_file: &PathBuf) -> Result<PathBuf, Error> {
 	compiled_program_path.push(filename);
 	compiled_program_path.set_extension(JSON_FILE_EXTENTION);
 
-	// Create a file to store command output inside a json file
-	let mut file = File::create(&compiled_program_path)
-		.map_err(|e| Error::FileCreation(path_to_cache_dir.as_path().display().to_string(), e))?;
-	file.write_all(&compilation_output.stdout)
-		.map_err(|e| Error::WriteToFile(path_to_cache_dir.as_path().display().to_string(), e))?;
+	return Ok(compiled_program_path);
+}
 
-	Ok(compiled_program_path)
+pub fn compile_(path_to_cairo_file: &PathBuf) -> Result<Vec<u8>, Error> {
+	let path_to_cairo_compiler = which(CAIRO_COMPILE_BINARY)?;
+
+	println!(
+		"which cairo-compile: {}",
+		path_to_cairo_compiler.display().to_string()
+	);
+
+	// Use cairo-compile binary in order to compile the .cairo file
+	let compilation_output = Command::new(CAIRO_COMPILE_BINARY)
+		.args([&path_to_cairo_file])
+		.output()
+		.map_err(Error::RunProcess)?;
+
+	if compilation_output.status.success() {
+		return Ok(compilation_output.stdout);
+	} else {
+		return Err(Error::Compilation(
+			path_to_cairo_compiler.as_path().display().to_string(),
+			String::from_utf8(compilation_output.stderr).unwrap_or_else(|e| {
+				format!(
+					"{} with non utf8 error message: {}",
+					path_to_cairo_file.as_path().display(),
+					e
+				)
+			}),
+		));
+	}
 }

@@ -20,12 +20,21 @@ pub enum ListTestEntrypointsError {
 pub fn list_test_entrypoints(
 	path_to_compiled_cairo_program: &PathBuf,
 ) -> Result<Vec<String>, ListTestEntrypointsError> {
-	let re = Regex::new(r"__main__.(test_\w+)$").expect("Should be a valid regex");
 	let data = fs::read_to_string(path_to_compiled_cairo_program)?;
 	let json = serde_json::from_str::<Value>(&data)?;
+	list_test_entrypoints_(json)
+}
+
+/// Get the list of test entrypoint from a compiled cairo file.
+/// test entrypoint are function starting with "test_".
+/// The function will return a list of test entrypoint as `String` (ie: "test_function");
+///
+/// return a vector of entrypoints
+pub fn list_test_entrypoints_(compiled: Value) -> Result<Vec<String>, ListTestEntrypointsError> {
+	let re = Regex::new(r"__main__.(test_\w+)$").expect("Should be a valid regex");
 	let mut test_entrypoints = Vec::new();
 
-	let identifiers = json["identifiers"].as_object();
+	let identifiers = compiled["identifiers"].as_object();
 	match identifiers {
 		Some(identifiers) => {
 			for (key, value) in identifiers {
