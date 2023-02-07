@@ -4,8 +4,8 @@ use crate::cli::commands::{test::TestArgs, CommandExecution};
 use std::{fs::File, io::BufReader, path::PathBuf};
 
 use super::{
-	compile_and_list_entrypoints, get_cache, setup_hint_processor, setup_hooks,
-	test_single_entrypoint, TestCommandError, TestResult,
+	compile_and_list_entrypoints, get_cache, run::test_single_entrypoint, setup_hint_processor,
+	setup_hooks, TestCommandError, TestResult,
 };
 
 use crate::cli::commands::test::cache::{

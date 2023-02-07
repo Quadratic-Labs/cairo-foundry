@@ -18,6 +18,7 @@ use std::{fmt::Display, fs::File, io, io::BufWriter, path::PathBuf, sync::Arc, t
 use uuid::Uuid;
 
 use self::cache::read_cache;
+use self::run::run_tests_for_one_file;
 
 use super::{list::path_is_valid_directory, CommandExecution};
 use std::fs;
@@ -39,6 +40,7 @@ use crate::{
 };
 
 pub mod cache;
+pub mod run;
 
 /// Enum containing the possible errors that you may encounter in the ``Test`` module
 #[derive(Error, Debug)]
@@ -265,136 +267,6 @@ fn get_cache(path_to_code: PathBuf) -> Result<CompiledCacheFile, String> {
 			});
 		},
 	}
-}
-
-fn purge_hint_buffer(execution_uuid: &Uuid, output: &mut String) {
-	// Safe to unwrap as long as `init_buffer` has been called before
-	let buffer = get_buffer(execution_uuid).unwrap();
-	if !buffer.is_empty() {
-		output.push_str(&format!("[{}]:\n{}", "captured stdout".blue(), buffer));
-	}
-	clear_buffer(execution_uuid);
-}
-
-/// Execute a single test.
-/// Take a program and a test name as input, search for this entrypoint in the compiled file
-/// and execute it.
-/// It will then return a TestResult, representing the output of the test.
-fn test_single_entrypoint(
-	program_json: ProgramJson,
-	test_entrypoint: &str,
-	hint_processor: &mut BuiltinHintProcessor,
-	hooks: Option<Hooks>,
-	max_steps: u64,
-) -> Result<TestResult, TestCommandError> {
-	let start = Instant::now();
-	let mut output = String::new();
-	let execution_uuid = Uuid::new_v4();
-	init_buffer(execution_uuid);
-
-	let program = Program::from_json(program_json, Some(test_entrypoint))?;
-
-	let res_cairo_run = cairo_run(program, hint_processor, execution_uuid, hooks, max_steps);
-	let duration = start.elapsed();
-	let (opt_runner_and_output, test_success) = match res_cairo_run {
-		Ok(res) => {
-			output.push_str(&format!(
-				"[{}] {} ({:?})\n",
-				"OK".green(),
-				test_entrypoint,
-				duration
-			));
-			(Some(res), TestStatus::SUCCESS)
-		},
-		Err(CairoRunError::VirtualMachine(VirtualMachineError::CustomHint(
-			custom_error_message,
-		))) if custom_error_message == "skip" => {
-			output.push_str(&format!("[{}] {}\n", "SKIPPED".yellow(), test_entrypoint,));
-			(None, TestStatus::SUCCESS)
-		},
-		Err(CairoRunError::VirtualMachine(VirtualMachineError::CustomHint(
-			custom_error_message,
-		))) if custom_error_message == EXPECT_REVERT_FLAG => {
-			output.push_str(&format!(
-				"[{}] {}\nError: execution did not revert while expect_revert() was specified\n\n",
-				"FAILED".red(),
-				test_entrypoint,
-			));
-			(None, TestStatus::FAILURE)
-		},
-		Err(e) => {
-			output.push_str(&format!(
-				"[{}] {}\nError: {:?}\n\n",
-				"FAILED".red(),
-				test_entrypoint,
-				e
-			));
-			(None, TestStatus::FAILURE)
-		},
-	};
-
-	purge_hint_buffer(&execution_uuid, &mut output);
-	let (mut runner, mut vm) = match opt_runner_and_output {
-		Some(runner_and_vm) => runner_and_vm,
-		None => return Ok((output, test_success).into()),
-	};
-
-	// Display the execution output if present
-	match runner.get_output(&mut vm) {
-		Ok(runner_output) => {
-			if !runner_output.is_empty() {
-				output.push_str(&format!(
-					"[{}]:\n{}",
-					"execution output".purple(),
-					&runner_output
-				));
-			}
-		},
-		Err(e) => eprintln!("failed to get output from the cairo runner: {e}"),
-	};
-
-	output.push('\n');
-	Ok((output, test_success).into())
-}
-
-/// Run every test contained in a cairo file.
-/// this function will deserialize a compiled cairo file, and call ``test_single_entrypoint`` on
-/// each entrypoint provided.
-/// It will then return a TestResult corresponding to all the tests (SUCCESS if all the test
-/// succeded, FAILURE otherwise).
-fn run_tests_for_one_file(
-	hint_processor: &mut BuiltinHintProcessor,
-	path_to_original: PathBuf,
-	program_json: ProgramJson,
-	test_entrypoints: Vec<String>,
-	hooks: Hooks,
-	max_steps: u64,
-) -> Result<TestResult, TestCommandError> {
-	let output = format!("Running tests in file {}\n", path_to_original.display());
-	let res = test_entrypoints
-		.into_iter()
-		.map(|test_entrypoint| {
-			test_single_entrypoint(
-				program_json.clone(),
-				&test_entrypoint,
-				hint_processor,
-				Some(hooks.clone()),
-				max_steps,
-			)
-		})
-		.collect::<Result<Vec<_>, TestCommandError>>()?
-		.into_iter()
-		.fold((output, TestStatus::SUCCESS), |mut a, b| {
-			a.0.push_str(&b.output);
-			// SUCCESS if both a.1 and b.success are SUCCESS, otherwise, FAILURE
-			a.1 = if a.1 == TestStatus::SUCCESS && b.success == TestStatus::SUCCESS {
-				TestStatus::SUCCESS
-			} else {
-				TestStatus::FAILURE
-			};
-			a
-		});
-	Ok(res.into())
 }
 
 impl CommandExecution<TestOutput, TestCommandError> for TestArgs {
