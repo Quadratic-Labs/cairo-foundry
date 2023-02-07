@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use std::{fmt::Display, fs::File, io, io::BufWriter, path::PathBuf, sync::Arc, time::Instant};
 use uuid::Uuid;
 
-use super::{CommandExecution, TestCommandError, TestResult, TestStatus};
+use super::{CommandExecution, TestCommandError}
 use std::fs;
 use thiserror::Error;
 
@@ -32,6 +32,28 @@ use crate::{
 		test_files::{list_test_files, ListTestsFilesError},
 	},
 };
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum TestStatus {
+	SUCCESS,
+	FAILURE,
+}
+
+/// Structure representing the result of one or multiple test.
+/// Contains the output of the test, as well as the status.
+pub struct TestResult {
+	pub output: String,
+	pub success: TestStatus,
+}
+
+impl From<(String, TestStatus)> for TestResult {
+	fn from(from: (String, TestStatus)) -> Self {
+		Self {
+			output: from.0,
+			success: from.1,
+		}
+	}
+}
 
 fn purge_hint_buffer(execution_uuid: &Uuid, output: &mut String) {
 	// Safe to unwrap as long as `init_buffer` has been called before

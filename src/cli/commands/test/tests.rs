@@ -8,9 +8,7 @@ use super::{
 	setup_hooks, TestCommandError, TestResult,
 };
 
-use crate::cli::commands::test::cache::{
-	create_compiled_contract_path, read_cache, Cache, CacheError,
-};
+use crate::compile::cache::{create_compiled_contract_path, read_cache, Cache, CacheError};
 
 pub fn run_single_test(
 	test_name: &str,

@@ -10,6 +10,8 @@ use std::{
 use thiserror::Error;
 use which::{which, Error as WhichError};
 
+pub mod cache;
+
 const JSON_FILE_EXTENTION: &str = "json";
 const CAIRO_COMPILE_BINARY: &str = "cairo-compile";
 
@@ -125,4 +127,14 @@ pub fn compile_(path_to_cairo_file: &PathBuf) -> Result<Vec<u8>, Error> {
 			}),
 		));
 	}
+}
+
+/// Compile a cairo file, returning a truple
+/// (path_to_original_code, path_to_compiled_code, entrypoints)
+fn compile_and_list_entrypoints_original(
+	path_to_code: PathBuf,
+) -> Result<(PathBuf, PathBuf, Vec<String>), TestCommandError> {
+	let path_to_compiled = compile(&path_to_code)?;
+	let entrypoints = list_test_entrypoints(&path_to_compiled)?;
+	Ok((path_to_code, path_to_compiled, entrypoints))
 }
